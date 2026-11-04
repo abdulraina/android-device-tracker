@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Device Information</title><style>
+body{font:16px system-ui;background:#f4f6fb;margin:0;color:#182033}.wrap{max-width:560px;margin:8vh auto;padding:24px}
+.card{background:white;border-radius:18px;padding:26px;box-shadow:0 8px 30px #18203312}
+button{background:#2457d6;color:white;border:0;border-radius:10px;padding:12px 18px;font-size:16px;cursor:pointer}
+small{color:#5c6475}#status{margin-top:16px}
+</style></head><body><div class="wrap"><div class="card">
+<h1>Device information check</h1>
+<p>This page can share basic browser/device details and battery status with the site administrator.</p>
+<p><strong>What may be collected:</strong> device type, browser, available OS/device hints, screen size, language, timezone and battery level/charging state where the browser supports it. Your IP address is received by the server.</p>
+<p>Battery and device model details are not available in every browser. This page does not request GPS location, contacts, photos, IMEI or phone number.</p>
+<label><input type="checkbox" id="consent"> I agree to share the information listed above.</label><p>
+<button id="send">Share device information</button></p><div id="status" role="status"></div>
+<p><small>Only submit if you understand and agree to this collection.</small></p>
+</div></div><script>
+const statusEl=document.getElementById('status');
+function browserName(ua){
+ if(/Edg\//.test(ua))return 'Microsoft Edge';
+ if(/OPR\//.test(ua))return 'Opera';
+ if(/Chrome\//.test(ua))return 'Chrome';
+ if(/Firefox\//.test(ua))return 'Firefox';
+ if(/Safari\//.test(ua)&&!/Chrome\//.test(ua))return 'Safari';
+ return 'Other / unknown';
+}
+document.getElementById('send').addEventListener('click', async()=>{
+ if(!document.getElementById('consent').checked){statusEl.textContent='Please tick the consent box first.';return;}
+ const ua=navigator.userAgent;
+ const data={
+  consent:true,
+  device:/Android/i.test(ua)?'Android':(/iPhone|iPad|iPod/i.test(ua)?'iOS':'Other'),
+  brand:'', model:'', os_version:'',
+  browser:browserName(ua),
+  screen:`${screen.width} x ${screen.height}`,
+  language:navigator.language||'',
+  timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'',
+  battery_supported:false, battery_level:null, charging:false
+ };
+ // User-Agent Client Hints may provide model/brand on supported Chromium browsers.
+ try{
+  if(navigator.userAgentData){
+   const hints=await navigator.userAgentData.getHighEntropyValues(['model','platformVersion','fullVersionList']);
+   data.model=hints.model||'';
+   data.os_version=hints.platformVersion||'';
+   data.brand=(hints.brands||[]).map(x=>x.brand).join(', ');
+   if(!data.brand)data.brand=(navigator.userAgentData.brands||[]).map(x=>x.brand).join(', ');
+   if(hints.platform)data.device=hints.platform;
+  } else {
+   const m=ua.match(/Android\s([\d.]+)/i); if(m)data.os_version=m[1];
+  }
+ }catch(e){}
+ // Battery API is deprecated/unsupported in many browsers. Read only after consent.
+ try{
+  if(navigator.getBattery){
+   const b=await navigator.getBattery();
+   data.battery_supported=true;
+   data.battery_level=Math.round(b.level*100);
+   data.charging=b.charging;
+  }
+ }catch(e){}
+ try{
+  const r=await fetch('/api/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  if(!r.ok)throw new Error('Server rejected the request');
+  statusEl.textContent='Thank you. Your consented device information was shared successfully.';
+ }catch(e){statusEl.textContent='Could not submit. Please try again later.';}
+});
+</script></body></html>
